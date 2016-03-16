@@ -97,136 +97,6 @@
 int CopyTransactionManager = TRANSACTION_MANAGER_1PC;
 
 
-/* Data structures from copy.c, to keep track of COPY processing state */
-typedef enum CopyDest
-{
-	COPY_FILE,                  /* to/from file (or a piped program) */
-	COPY_OLD_FE,                /* to/from frontend (2.0 protocol) */
-	COPY_NEW_FE                 /* to/from frontend (3.0 protocol) */
-} CopyDest;
-
-typedef enum EolType
-{
-	EOL_UNKNOWN,
-	EOL_NL,
-	EOL_CR,
-	EOL_CRNL
-} EolType;
-
-typedef struct CopyStateData
-{
-	/* low-level state data */
-	CopyDest copy_dest;         /* type of copy source/destination */
-	FILE *copy_file;            /* used if copy_dest == COPY_FILE */
-	StringInfo fe_msgbuf;       /* used for all dests during COPY TO, only for
-	                             * dest == COPY_NEW_FE in COPY FROM */
-	bool fe_eof;                /* true if detected end of copy data */
-	EolType eol_type;           /* EOL type of input */
-	int file_encoding;          /* file or remote side's character encoding */
-	bool need_transcoding;      /* file encoding diff from server? */
-	bool encoding_embeds_ascii; /* ASCII can be non-first byte? */
-
-	/* parameters from the COPY command */
-	Relation rel;               /* relation to copy to or from */
-	QueryDesc *queryDesc;       /* executable query to copy from */
-	List *attnumlist;           /* integer list of attnums to copy */
-	char *filename;             /* filename, or NULL for STDIN/STDOUT */
-	bool is_program;            /* is 'filename' a program to popen? */
-	bool binary;                /* binary format? */
-	bool oids;                  /* include OIDs? */
-	bool freeze;                /* freeze rows on loading? */
-	bool csv_mode;              /* Comma Separated Value format? */
-	bool header_line;           /* CSV header line? */
-	char *null_print;           /* NULL marker string (server encoding!) */
-	int null_print_len;         /* length of same */
-	char *null_print_client;    /* same converted to file encoding */
-	char *delim;                /* column delimiter (must be 1 byte) */
-	char *quote;                /* CSV quote char (must be 1 byte) */
-	char *escape;               /* CSV escape char (must be 1 byte) */
-	List *force_quote;          /* list of column names */
-	bool force_quote_all;       /* FORCE QUOTE *? */
-	bool *force_quote_flags;    /* per-column CSV FQ flags */
-	List *force_notnull;        /* list of column names */
-	bool *force_notnull_flags;  /* per-column CSV FNN flags */
-#if PG_VERSION_NUM >= 90400
-	List *force_null;           /* list of column names */
-	bool *force_null_flags;     /* per-column CSV FN flags */
-#endif
-	bool convert_selectively;   /* do selective binary conversion? */
-	List *convert_select;       /* list of column names (can be NIL) */
-	bool *convert_select_flags; /* per-column CSV/TEXT CS flags */
-
-	/* these are just for error messages, see CopyFromErrorCallback */
-	const char *cur_relname;    /* table name for error messages */
-	int cur_lineno;             /* line number for error messages */
-	const char *cur_attname;    /* current att for error messages */
-	const char *cur_attval;     /* current att value for error messages */
-
-	/*
-	 * Working state for COPY TO/FROM
-	 */
-	MemoryContext copycontext;  /* per-copy execution context */
-
-	/*
-	 * Working state for COPY TO
-	 */
-	FmgrInfo *out_functions;    /* lookup info for output functions */
-	MemoryContext rowcontext;   /* per-row evaluation context */
-
-	/*
-	 * Working state for COPY FROM
-	 */
-	AttrNumber num_defaults;
-	bool file_has_oids;
-	FmgrInfo oid_in_function;
-	Oid oid_typioparam;
-	FmgrInfo *in_functions;     /* array of input functions for each attrs */
-	Oid *typioparams;           /* array of element types for in_functions */
-	int *defmap;                /* array of default att numbers */
-	ExprState **defexprs;       /* array of default att expressions */
-	bool volatile_defexprs;             /* is any of defexprs volatile? */
-	List *range_table;
-
-	/*
-	 * These variables are used to reduce overhead in textual COPY FROM.
-	 *
-	 * attribute_buf holds the separated, de-escaped text for each field of
-	 * the current line.  The CopyReadAttributes functions return arrays of
-	 * pointers into this buffer.  We avoid palloc/pfree overhead by re-using
-	 * the buffer on each cycle.
-	 */
-	StringInfoData attribute_buf;
-
-	/* field raw data pointers found by COPY FROM */
-
-	int max_fields;
-	char **raw_fields;
-
-	/*
-	 * Similarly, line_buf holds the whole input line being processed. The
-	 * input cycle is first to read the whole line into line_buf, convert it
-	 * to server encoding there, and then extract the individual attribute
-	 * fields into attribute_buf.  line_buf is preserved unmodified so that we
-	 * can display it in error messages if appropriate.
-	 */
-	StringInfoData line_buf;
-	bool line_buf_converted;    /* converted to server encoding? */
-	bool line_buf_valid;        /* contains the row being processed? */
-
-	/*
-	 * Finally, raw_buf holds raw data read from the data source (file or
-	 * client connection).	CopyReadLine parses this data sufficiently to
-	 * locate line boundaries, then transfers the data to line_buf and
-	 * converts it.	 Note: we guarantee that there is a \0 at
-	 * raw_buf[raw_buf_len].
-	 */
-#define RAW_BUF_SIZE 65536      /* we palloc RAW_BUF_SIZE+1 bytes */
-	char *raw_buf;
-	int raw_buf_index;          /* next byte to process */
-	int raw_buf_len;            /* total # of bytes stored */
-} CopyStateData;
-
-
 /* ShardConnections represents a set of connections for each placement of a shard */
 typedef struct ShardConnections
 {
@@ -255,12 +125,18 @@ static void OpenCopyTransactions(CopyStmt *copyStatement,
 								 ShardConnections *shardConnections,
 								 int64 shardId);
 static StringInfo ConstructCopyStatement(CopyStmt *copyStatement, int64 shardId);
-static void AppendColumnNames(StringInfo command, List *columnList);
-static void AppendCopyOptions(StringInfo command, List *copyOptionList);
-static void CopyRowToPlacements(StringInfo lineBuf, ShardConnections *shardConnections);
+static void SendCopyDataToPlacements(StringInfo dataBuffer,
+									 ShardConnections *shardConnections);
 static List * ConnectionList(HTAB *connectionHash);
 static void EndRemoteCopy(List *connectionList, bool stopOnFailure);
 static void ReportCopyError(PGconn *connection, PGresult *result);
+static void CopySendData(CopyOutState outputState, const void *databuf, int datasize);
+static void CopySendString(CopyOutState outputState, const char *str);
+static void CopySendChar(CopyOutState outputState, char c);
+static void CopySendInt32(CopyOutState outputState, int32 val);
+static void CopySendInt16(CopyOutState outputState, int16 val);
+static void CopyAttributeOutText(CopyOutState outputState, char *string);
+static inline void CopyFlushOutput(CopyOutState outputState, char *start, char *pointer);
 
 
 /*
@@ -273,13 +149,17 @@ CitusCopyFrom(CopyStmt *copyStatement, char *completionTag)
 	RangeVar *relation = copyStatement->relation;
 	Oid tableId = RangeVarGetRelid(relation, NoLock, false);
 	char *relationName = get_rel_name(tableId);
+	EState *executorState = NULL;
+	MemoryContext executorTupleContext = NULL;
+	ExprContext *executorExpressionContext = NULL;
 	List *shardIntervalList = NULL;
 	ListCell *shardIntervalCell = NULL;
 	char partitionMethod = '\0';
 	Var *partitionColumn = NULL;
 	HTAB *shardConnectionHash = NULL;
+	HASH_SEQ_STATUS status;
+	ShardConnections *shardConnections = NULL;
 	List *connectionList = NIL;
-	MemoryContext tupleContext = NULL;
 	CopyState copyState = NULL;
 	TupleDesc tupleDescriptor = NULL;
 	uint32 columnCount = 0;
@@ -294,6 +174,8 @@ CitusCopyFrom(CopyStmt *copyStatement, char *completionTag)
 	int shardCount = 0;
 	uint64 processedRowCount = 0;
 	ErrorContextCallback errorCallback;
+	CopyOutState copyOutState = NULL;
+	FmgrInfo *columnOutputFunctions = NULL;
 
 	/* disallow COPY to/from file or program except for superusers */
 	if (copyStatement->filename != NULL && !superuser())
@@ -396,30 +278,22 @@ CitusCopyFrom(CopyStmt *copyStatement, char *completionTag)
 							  copyStatement->attlist,
 							  copyStatement->options);
 
-	if (copyState->binary)
-	{
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						errmsg("Copy in binary mode is not currently supported")));
-	}
-
 	/* set up callback to identify error line number */
 	errorCallback.callback = CopyFromErrorCallback;
 	errorCallback.arg = (void *) copyState;
 	errorCallback.previous = error_context_stack;
 	error_context_stack = &errorCallback;
 
-	/*
-	 * We create a new memory context called tuple context, and read and write
-	 * each row's values within this memory context. After each read and write,
-	 * we reset the memory context. That way, we immediately release memory
-	 * allocated for each row, and don't bloat memory usage with large input
-	 * files.
-	 */
-	tupleContext = AllocSetContextCreate(CurrentMemoryContext,
-										 "COPY Row Memory Context",
-										 ALLOCSET_DEFAULT_MINSIZE,
-										 ALLOCSET_DEFAULT_INITSIZE,
-										 ALLOCSET_DEFAULT_MAXSIZE);
+	executorState = CreateExecutorState();
+	executorTupleContext = GetPerTupleMemoryContext(executorState);
+	executorExpressionContext = GetPerTupleExprContext(executorState);
+
+	copyOutState = (CopyOutState) palloc0(sizeof(CopyOutStateData));
+	copyOutState->binary = true;
+	copyOutState->fe_msgbuf = makeStringInfo();
+	copyOutState->rowcontext = executorTupleContext;
+
+	columnOutputFunctions = ColumnOutputFunctions(tupleDescriptor, copyOutState->binary);
 
 	/* we use a PG_TRY block to roll back on errors (e.g. in NextCopyFrom) */
 	PG_TRY();
@@ -430,21 +304,20 @@ CitusCopyFrom(CopyStmt *copyStatement, char *completionTag)
 			Datum partitionColumnValue = 0;
 			ShardInterval *shardInterval = NULL;
 			int64 shardId = 0;
-			ShardConnections *shardConnections = NULL;
 			bool found = false;
-			StringInfo lineBuf = NULL;
 			MemoryContext oldContext = NULL;
 
-			oldContext = MemoryContextSwitchTo(tupleContext);
+			ResetPerTupleExprContext(executorState);
+
+			oldContext = MemoryContextSwitchTo(executorTupleContext);
 
 			/* parse a row from the input */
-			nextRowFound = NextCopyFrom(copyState, NULL, columnValues, columnNulls, NULL);
-
-			MemoryContextSwitchTo(oldContext);
+			nextRowFound = NextCopyFrom(copyState, executorExpressionContext,
+										columnValues,columnNulls, NULL);
 
 			if (!nextRowFound)
 			{
-				MemoryContextReset(tupleContext);
+				MemoryContextSwitchTo(oldContext);
 				break;
 			}
 
@@ -474,9 +347,11 @@ CitusCopyFrom(CopyStmt *copyStatement, char *completionTag)
 
 			shardId = shardInterval->shardId;
 
+			MemoryContextSwitchTo(oldContext);
+
 			/* find the connections to the shard placements */
 			shardConnections = (ShardConnections *) hash_search(shardConnectionHash,
-																&shardInterval->shardId,
+																&shardId,
 																HASH_ENTER,
 																&found);
 			if (!found)
@@ -486,21 +361,33 @@ CitusCopyFrom(CopyStmt *copyStatement, char *completionTag)
 				shardConnections->connectionList = NIL;
 
 				OpenCopyTransactions(copyStatement, shardConnections, shardId);
+
+				BuildCopyBinaryHeaders(copyOutState);
+				SendCopyDataToPlacements(copyOutState->fe_msgbuf, shardConnections);
 			}
 
-			/* get the (truncated) line buffer */
-			lineBuf = &copyState->line_buf;
-			lineBuf->data[lineBuf->len++] = '\n';
-
 			/* Replicate row to all shard placements */
-			CopyRowToPlacements(lineBuf, shardConnections);
+			BuildCopyRowData(columnValues, columnNulls, tupleDescriptor,
+							 copyOutState, columnOutputFunctions);
+			SendCopyDataToPlacements(copyOutState->fe_msgbuf, shardConnections);
 
 			processedRowCount += 1;
-
-			MemoryContextReset(tupleContext);
 		}
 
-		connectionList = ConnectionList(shardConnectionHash);
+		/* send binary footers to all shards */
+		hash_seq_init(&status, shardConnectionHash);
+
+		shardConnections = (ShardConnections *) hash_seq_search(&status);
+		while (shardConnections != NULL)
+		{
+			List *shardConnectionsList = list_copy(shardConnections->connectionList);
+			connectionList = list_concat(connectionList, shardConnectionsList);
+
+			BuildCopyBinaryFooters(copyOutState);
+			SendCopyDataToPlacements(copyOutState->fe_msgbuf, shardConnections);
+
+			shardConnections = (ShardConnections *) hash_seq_search(&status);
+		}
 
 		EndRemoteCopy(connectionList, true);
 
@@ -513,8 +400,6 @@ CitusCopyFrom(CopyStmt *copyStatement, char *completionTag)
 	}
 	PG_CATCH();
 	{
-		EndCopyFrom(copyState);
-
 		/* roll back all transactions */
 		connectionList = ConnectionList(shardConnectionHash);
 		EndRemoteCopy(connectionList, false);
@@ -831,98 +716,18 @@ ConstructCopyStatement(CopyStmt *copyStatement, int64 shardId)
 
 	appendStringInfo(command, "COPY %s_%ld ", qualifiedName, shardId);
 
-	if (copyStatement->attlist != NIL)
-	{
-		AppendColumnNames(command, copyStatement->attlist);
-	}
-
-	appendStringInfoString(command, "FROM STDIN");
-
-	if (copyStatement->options)
-	{
-		appendStringInfoString(command, " WITH ");
-
-		AppendCopyOptions(command, copyStatement->options);
-	}
+	appendStringInfoString(command, "FROM STDIN WITH (FORMAT BINARY)");
 
 	return command;
 }
 
 
 /*
- * AppendCopyOptions deparses a list of CopyStmt options and appends them to command.
+ * SendCopyDataToPlacements copies given copy data to a list of placements for
+ * a shard.
  */
 static void
-AppendCopyOptions(StringInfo command, List *copyOptionList)
-{
-	ListCell *optionCell = NULL;
-	char separator = '(';
-
-	foreach(optionCell, copyOptionList)
-	{
-		DefElem *option = (DefElem *) lfirst(optionCell);
-
-		if (strcmp(option->defname, "header") == 0 && defGetBoolean(option))
-		{
-			/* worker should not skip header again */
-			continue;
-		}
-
-		appendStringInfo(command, "%c%s ", separator, option->defname);
-
-		if (strcmp(option->defname, "force_not_null") == 0 ||
-			strcmp(option->defname, "force_null") == 0)
-		{
-			if (!option->arg)
-			{
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg(
-							 "argument to option \"%s\" must be a list of column names",
-							 option->defname)));
-			}
-			else
-			{
-				AppendColumnNames(command, (List *) option->arg);
-			}
-		}
-		else
-		{
-			appendStringInfo(command, "'%s'", defGetString(option));
-		}
-
-		separator = ',';
-	}
-
-	appendStringInfoChar(command, ')');
-}
-
-
-/*
- * AppendColumnList deparses a list of column names into a StringInfo.
- */
-static void
-AppendColumnNames(StringInfo command, List *columnList)
-{
-	ListCell *attributeCell = NULL;
-	char separator = '(';
-
-	foreach(attributeCell, columnList)
-	{
-		char *columnName = strVal(lfirst(attributeCell));
-		appendStringInfo(command, "%c%s", separator, quote_identifier(columnName));
-		separator = ',';
-	}
-
-	appendStringInfoChar(command, ')');
-}
-
-
-/*
- * CopyRowToPlacements copies a row to a list of placements for a shard.
- */
-static void
-CopyRowToPlacements(StringInfo lineBuf, ShardConnections *shardConnections)
+SendCopyDataToPlacements(StringInfo dataBuffer, ShardConnections *shardConnections)
 {
 	ListCell *connectionCell = NULL;
 	foreach(connectionCell, shardConnections->connectionList)
@@ -933,13 +738,13 @@ CopyRowToPlacements(StringInfo lineBuf, ShardConnections *shardConnections)
 		int64 shardId = shardConnections->shardId;
 
 		/* copy the line buffer into the placement */
-		int copyResult = PQputCopyData(connection, lineBuf->data, lineBuf->len);
+		int copyResult = PQputCopyData(connection, dataBuffer->data, dataBuffer->len);
 		if (copyResult != 1)
 		{
 			char *nodeName = ConnectionGetOptionValue(connection, "host");
 			char *nodePort = ConnectionGetOptionValue(connection, "port");
 			ereport(ERROR, (errcode(ERRCODE_IO_ERROR),
-							errmsg("Failed to COPY to shard %ld on %s:%s",
+							errmsg("failed to COPY to shard %ld on %s:%s",
 								   shardId, nodeName, nodePort)));
 		}
 	}
@@ -1007,7 +812,7 @@ EndRemoteCopy(List *connectionList, bool stopOnFailure)
 			if (stopOnFailure)
 			{
 				ereport(ERROR, (errcode(ERRCODE_IO_ERROR),
-								errmsg("Failed to COPY to shard %ld on %s:%s",
+								errmsg("failed to COPY to shard %ld on %s:%s",
 									   shardId, nodeName, nodePort)));
 			}
 
@@ -1058,5 +863,310 @@ ReportCopyError(PGconn *connection, PGresult *result)
 		}
 
 		ereport(ERROR, (errmsg("%s", remoteMessage)));
+	}
+}
+
+
+/*
+ * ColumnOutputFunctions walks over a table's columns, and finds each column's
+ * type information. The function then resolves each type's output function,
+ * and stores and returns these output functions in an array.
+ */
+FmgrInfo *
+ColumnOutputFunctions(TupleDesc rowDescriptor, bool binaryFormat)
+{
+	uint32 columnCount = (uint32) rowDescriptor->natts;
+	FmgrInfo *columnOutputFunctions = palloc0(columnCount * sizeof(FmgrInfo));
+
+	uint32 columnIndex = 0;
+	for (columnIndex = 0; columnIndex < columnCount; columnIndex++)
+	{
+		FmgrInfo *currentOutputFunction = &columnOutputFunctions[columnIndex];
+		Form_pg_attribute currentColumn = rowDescriptor->attrs[columnIndex];
+		Oid columnTypeId = currentColumn->atttypid;
+		Oid outputFunctionId = InvalidOid;
+		bool typeVariableLength = false;
+
+		if (binaryFormat)
+		{
+			getTypeBinaryOutputInfo(columnTypeId, &outputFunctionId, &typeVariableLength);
+		}
+		else
+		{
+			getTypeOutputInfo(columnTypeId, &outputFunctionId, &typeVariableLength);
+		}
+
+		Assert(currentColumn->attisdropped == false);
+
+		fmgr_info(outputFunctionId, currentOutputFunction);
+	}
+
+	return columnOutputFunctions;
+}
+
+
+/*
+ * BuildCopyRowData serializes one row using the column output functions,
+ * and appends the data to the row output state object's message buffer.
+ * This function is modeled after the CopyOneRowTo() function in
+ * commands/copy.c, but only implements a subset of that functionality.
+ * Note that the caller of this function should reset row memory context
+ * to not bloat memory usage.
+ */
+void
+BuildCopyRowData(Datum *valueArray, bool *isNullArray, TupleDesc rowDescriptor,
+				 CopyOutState rowOutputState, FmgrInfo *columnOutputFunctions)
+{
+	MemoryContext oldContext = NULL;
+	uint32 columnIndex = 0;
+	uint32 columnCount = 0;
+
+	/* reset previous tuple's output data */
+	resetStringInfo(rowOutputState->fe_msgbuf);
+
+	oldContext = MemoryContextSwitchTo(rowOutputState->rowcontext);
+
+	if (rowOutputState->binary)
+	{
+		CopySendInt16(rowOutputState, rowDescriptor->natts);
+	}
+
+	columnCount = (uint32) rowDescriptor->natts;
+	for (columnIndex = 0; columnIndex < columnCount; columnIndex++)
+	{
+		Datum value = valueArray[columnIndex];
+		bool isNull = isNullArray[columnIndex];
+		bool lastColumn = false;
+
+		if (rowOutputState->binary)
+		{
+			if (!isNull)
+			{
+				FmgrInfo *outputFunctionPointer = &columnOutputFunctions[columnIndex];
+				bytea *outputBytes = SendFunctionCall(outputFunctionPointer, value);
+
+				CopySendInt32(rowOutputState, VARSIZE(outputBytes) - VARHDRSZ);
+				CopySendData(rowOutputState, VARDATA(outputBytes),
+							 VARSIZE(outputBytes) - VARHDRSZ);
+			}
+			else
+			{
+				CopySendInt32(rowOutputState, -1);
+			}
+		}
+		else
+		{
+			if (!isNull)
+			{
+				FmgrInfo *outputFunctionPointer = &columnOutputFunctions[columnIndex];
+				char *columnText = OutputFunctionCall(outputFunctionPointer, value);
+
+				CopyAttributeOutText(rowOutputState, columnText);
+			}
+			else
+			{
+				CopySendString(rowOutputState, rowOutputState->null_print_client);
+			}
+
+			lastColumn = ((columnIndex + 1) == columnCount);
+			if (!lastColumn)
+			{
+				CopySendChar(rowOutputState, rowOutputState->delim[0]);
+			}
+		}
+	}
+
+	if (!rowOutputState->binary)
+	{
+		/* append default line termination string depending on the platform */
+#ifndef WIN32
+		CopySendChar(rowOutputState, '\n');
+#else
+		CopySendString(rowOutputState, "\r\n");
+#endif
+	}
+
+	MemoryContextSwitchTo(oldContext);
+}
+
+
+/* Append binary headers to the copy buffer in headerOutputState. */
+void
+BuildCopyBinaryHeaders(CopyOutState headerOutputState)
+{
+	const int32 zero = 0;
+
+	resetStringInfo(headerOutputState->fe_msgbuf);
+
+	/* Signature */
+	CopySendData(headerOutputState, BinarySignature, 11);
+
+	/* Flags field (no OIDs) */
+	CopySendInt32(headerOutputState, zero);
+
+	/* No header extension */
+	CopySendInt32(headerOutputState, zero);
+}
+
+
+/* Append binary footers to the copy buffer in footerOutputState. */
+void
+BuildCopyBinaryFooters(CopyOutState footerOutputState)
+{
+	int16 negative = -1;
+
+	resetStringInfo(footerOutputState->fe_msgbuf);
+	CopySendInt16(footerOutputState, negative);
+}
+
+
+/* *INDENT-OFF* */
+/* Append data to the copy buffer in outputState */
+static void
+CopySendData(CopyOutState outputState, const void *databuf, int datasize)
+{
+	appendBinaryStringInfo(outputState->fe_msgbuf, databuf, datasize);
+}
+
+
+/* Append a striong to the copy buffer in outputState. */
+static void
+CopySendString(CopyOutState outputState, const char *str)
+{
+	appendBinaryStringInfo(outputState->fe_msgbuf, str, strlen(str));
+}
+
+
+/* Append a char to the copy buffer in outputState. */
+static void
+CopySendChar(CopyOutState outputState, char c)
+{
+	appendStringInfoCharMacro(outputState->fe_msgbuf, c);
+}
+
+
+/* Append an int32 to the copy buffer in outputState. */
+static void
+CopySendInt32(CopyOutState outputState, int32 val)
+{
+	uint32 buf = htonl((uint32) val);
+	CopySendData(outputState, &buf, sizeof(buf));
+}
+
+
+/* Append an int16 to the copy buffer in outputState. */
+static void
+CopySendInt16(CopyOutState outputState, int16 val)
+{
+	uint16 buf = htons((uint16) val);
+	CopySendData(outputState, &buf, sizeof(buf));
+}
+
+
+/*
+ * Send text representation of one column, with conversion and escaping.
+ *
+ * NB: This function is based on commands/copy.c and doesn't fully conform to
+ * our coding style. The function should be kept in sync with copy.c.
+ */
+static void
+CopyAttributeOutText(CopyOutState cstate, char *string)
+{
+	char *pointer = NULL;
+	char *start = NULL;
+	char c = '\0';
+	char delimc = cstate->delim[0];
+
+	if (cstate->need_transcoding)
+	{
+		pointer = pg_server_to_any(string, strlen(string), cstate->file_encoding);
+	}
+	else
+	{
+		pointer = string;
+	}
+
+	/*
+	 * We have to grovel through the string searching for control characters
+	 * and instances of the delimiter character.  In most cases, though, these
+	 * are infrequent.  To avoid overhead from calling CopySendData once per
+	 * character, we dump out all characters between escaped characters in a
+	 * single call.  The loop invariant is that the data from "start" to "pointer"
+	 * can be sent literally, but hasn't yet been.
+	 *
+	 * As all encodings here are safe, i.e. backend supported ones, we can
+	 * skip doing pg_encoding_mblen(), because in valid backend encodings,
+	 * extra bytes of a multibyte character never look like ASCII.
+	 */
+	start = pointer;
+	while ((c = *pointer) != '\0')
+	{
+		if ((unsigned char) c < (unsigned char) 0x20)
+		{
+			/*
+			 * \r and \n must be escaped, the others are traditional. We
+			 * prefer to dump these using the C-like notation, rather than
+			 * a backslash and the literal character, because it makes the
+			 * dump file a bit more proof against Microsoftish data
+			 * mangling.
+			 */
+			switch (c)
+			{
+				case '\b':
+					c = 'b';
+					break;
+				case '\f':
+					c = 'f';
+					break;
+				case '\n':
+					c = 'n';
+					break;
+				case '\r':
+					c = 'r';
+					break;
+				case '\t':
+					c = 't';
+					break;
+				case '\v':
+					c = 'v';
+					break;
+				default:
+					/* If it's the delimiter, must backslash it */
+					if (c == delimc)
+						break;
+					/* All ASCII control chars are length 1 */
+					pointer++;
+					continue;		/* fall to end of loop */
+			}
+			/* if we get here, we need to convert the control char */
+			CopyFlushOutput(cstate, start, pointer);
+			CopySendChar(cstate, '\\');
+			CopySendChar(cstate, c);
+			start = ++pointer;	/* do not include char in next run */
+		}
+		else if (c == '\\' || c == delimc)
+		{
+			CopyFlushOutput(cstate, start, pointer);
+			CopySendChar(cstate, '\\');
+			start = pointer++;	/* we include char in next run */
+		}
+		else
+		{
+			pointer++;
+		}
+	}
+
+	CopyFlushOutput(cstate, start, pointer);
+}
+
+
+/* *INDENT-ON* */
+/* Helper function to send pending copy output */
+static inline void
+CopyFlushOutput(CopyOutState cstate, char *start, char *pointer)
+{
+	if (pointer > start)
+	{
+		CopySendData(cstate, start, pointer - start);
 	}
 }
