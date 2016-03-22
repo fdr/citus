@@ -36,6 +36,8 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
+#include <time.h>
+
 
 
 /* Local functions forward declarations */
@@ -67,6 +69,32 @@ LoadShardIntervalList(Oid relationId)
 	return shardList;
 }
 
+
+
+ShardInterval *
+LookupShardInterval(Oid relationId, int shardId)
+{
+	//clock_t start = clock();
+	DistTableCacheEntry *cacheEntry = DistributedTableCacheEntry(relationId);
+	int i = 0;
+	ShardInterval *newShardInterval = NULL;
+
+	for (i = 0; i < cacheEntry->shardIntervalArrayLength; i++)
+	{
+
+		if ((&cacheEntry->shardIntervalArray[i])->shardId == shardId)
+		{
+			newShardInterval = (ShardInterval *) palloc0(sizeof(ShardInterval));
+			CopyShardInterval(&cacheEntry->shardIntervalArray[i], newShardInterval);
+
+		}
+	}
+	//clock_t end = clock();
+	//float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+	//elog(INFO, "seconds:%f", seconds);
+
+	return newShardInterval;
+}
 
 /*
  * LoadShardList reads list of shards for given relationId from pg_dist_shard,

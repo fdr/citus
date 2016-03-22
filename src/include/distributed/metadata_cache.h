@@ -13,6 +13,7 @@
 
 #include "distributed/master_metadata_utility.h"
 #include "distributed/pg_dist_partition.h"
+#include "nodes/primnodes.h"
 
 
 /*
@@ -41,7 +42,8 @@ typedef struct
 	ShardInterval *shardIntervalArray;
 } DistTableCacheEntry;
 
-
+extern uint64
+FastShardPruning(Const *hashedValue, Oid relationId);
 extern bool IsDistributedTable(Oid relationId);
 extern ShardInterval * LoadShardInterval(uint64 shardId);
 extern DistTableCacheEntry * DistributedTableCacheEntry(Oid distributedRelationId);
@@ -58,6 +60,7 @@ extern Oid DistShardPlacementRelationId(void);
 extern Oid DistPartitionLogicalRelidIndexId(void);
 extern Oid DistShardLogicalRelidIndexId(void);
 extern Oid DistShardShardidIndexId(void);
+extern Oid DistShardRelIdMinValueIndexId(void);
 extern Oid DistShardPlacementShardidIndexId(void);
 
 /* function oids */

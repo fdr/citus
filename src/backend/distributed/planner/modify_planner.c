@@ -529,9 +529,28 @@ DistributedModifyShardInterval(Query *query)
 	}
 
 	restrictClauseList = QueryRestrictList(query);
-	prunedShardList = PruneShardList(distributedTableId, tableId, restrictClauseList,
-									 shardIntervalList);
 
+
+	if (query->commandType == CMD_INSERT)
+	{
+		Var *partitionColumn = PartitionColumn(distributedTableId, tableId);
+		OpExpr *equalityExpr = linitial(restrictClauseList);
+		OpExpr *hashedEqExpr = (OpExpr *) HashableClauseMutator((Node *) equalityExpr,
+													partitionColumn);
+		Node *rightOp = get_rightop((Expr *) hashedEqExpr);
+		Const *rightConst = (Const *) rightOp;
+		Assert(IsA(rightOp, Const));
+
+		int shardId = FastShardPruning(rightConst, distributedTableId);
+
+		prunedShardList = lappend(prunedShardList, LookupShardInterval(distributedTableId, shardId));
+
+	}
+	else
+	{
+		prunedShardList = PruneShardList(distributedTableId, tableId, restrictClauseList,
+				shardIntervalList);
+	}
 	if (list_length(prunedShardList) != 1)
 	{
 		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),

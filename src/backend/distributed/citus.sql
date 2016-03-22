@@ -49,7 +49,11 @@ CREATE UNIQUE INDEX pg_dist_shard_shardid_index
 ON citus.pg_dist_shard using btree(shardid);
 CREATE INDEX pg_dist_shard_logical_relid_index
 ON citus.pg_dist_shard using btree(logicalrelid);
+CREATE INDEX pg_dist_shard_relid_minvalue_index
+ON citus.pg_dist_shard using btree(logicalrelid, shardminvalue);
 ALTER TABLE citus.pg_dist_shard SET SCHEMA pg_catalog;
+
+
 
 CREATE TABLE citus.pg_dist_shard_placement(
     shardid int8 NOT NULL,

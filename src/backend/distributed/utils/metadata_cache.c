@@ -33,7 +33,7 @@
 #include "utils/relfilenodemap.h"
 #include "utils/relmapper.h"
 #include "utils/syscache.h"
-
+#include "parser/parse_coerce.h"
 
 /* Hash table for informations about each partition */
 static HTAB *DistTableCacheHash = NULL;
@@ -140,6 +140,98 @@ LoadShardInterval(uint64 shardId)
 	return shardInterval;
 }
 
+
+int
+ShardMinValue(int partitionValue, Oid relationId)
+{
+	DistTableCacheEntry *cacheEntry = DistributedTableCacheEntry(relationId);
+	int64 shardCount = cacheEntry->shardIntervalArrayLength;
+	int64 hashTokenIncrement = HASH_TOKEN_COUNT / shardCount;
+	int64 diff = (int64)partitionValue - INT32_MIN;
+	int64 shardOrder = (diff) / hashTokenIncrement;
+	int64 shardMinVal = (shardOrder * hashTokenIncrement) + INT32_MIN;
+
+
+	if (false)
+	{
+		elog(INFO, "hashed value:%d", partitionValue);
+		elog(INFO, "hashTokenIncrement:%ld", hashTokenIncrement);
+		elog(INFO, "diff:%ld", diff);
+		elog(INFO, "shardOrder:%ld", shardOrder);
+		elog(INFO, "shardVal:%ld", shardMinVal);
+	}
+
+	if (partitionValue - shardMinVal > hashTokenIncrement)
+		elog(INFO, "????how could this happen?????");
+
+	return shardMinVal;
+}
+
+text *
+IntegerToText(int32 value)
+{
+	text *valueText = NULL;
+	StringInfo valueString = makeStringInfo();
+	appendStringInfo(valueString, "%d", value);
+
+	valueText = cstring_to_text(valueString->data);
+
+	return valueText;
+}
+
+
+/*
+ *  FastShardPruning uses index lookup on pg_dist_shard on logicalrelid and shardminvalue.
+ *
+ */
+uint64
+FastShardPruning(Const *hashedValue, Oid relationId)
+{
+	SysScanDesc scanDescriptor = NULL;
+	ScanKeyData scanKey[2];
+	int scanKeyCount = 2;
+	HeapTuple heapTuple = NULL;
+	bool isNull = false;
+
+	Relation pgDistShard = heap_open(DistShardRelationId(), AccessShareLock);
+	TupleDesc tupleDescriptor = RelationGetDescr(pgDistShard);
+
+	int shardMinValue = ShardMinValue(DatumGetInt32(hashedValue->constvalue), relationId);
+	text *shardMinValueText = IntegerToText(shardMinValue);
+
+
+	ScanKeyInit(&scanKey[0], Anum_pg_dist_shard_logicalrelid,
+				BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relationId));
+
+
+	ScanKeyInit(&scanKey[1], Anum_pg_dist_shard_shardminvalue,
+				BTGreaterEqualStrategyNumber, F_TEXTEQ,  PointerGetDatum(shardMinValueText) );
+
+
+	scanDescriptor = systable_beginscan(pgDistShard,
+			DistShardRelIdMinValueIndexId(), true,
+										NULL, scanKeyCount, scanKey);
+
+	heapTuple = systable_getnext(scanDescriptor);
+
+	if (!HeapTupleIsValid(heapTuple))
+	{
+		ereport(ERROR, (errmsg("could not find valid entry for shard ")));
+	}
+
+	Datum shardIdDatum = heap_getattr(heapTuple, Anum_pg_dist_shard_shardid,
+									  tupleDescriptor, &isNull);
+
+	int64 shardId = DatumGetInt64(shardIdDatum);
+
+//	elog(INFO, "shardId:%ld, shardMinValue:%d", shardId, shardMinValue);
+
+	systable_endscan(scanDescriptor);
+
+	heap_close(pgDistShard, NoLock);
+
+	return shardId;
+}
 
 /*
  * DistributedTableCacheEntry looks up a pg_dist_partition entry for a
@@ -402,6 +494,16 @@ DistShardShardidIndexId(void)
 	static Oid cachedOid = InvalidOid;
 
 	CachedRelationLookup("pg_dist_shard_shardid_index", &cachedOid);
+
+	return cachedOid;
+}
+
+Oid
+DistShardRelIdMinValueIndexId(void)
+{
+	static Oid cachedOid = InvalidOid;
+
+	CachedRelationLookup("pg_dist_shard_relid_minvalue_index", &cachedOid);
 
 	return cachedOid;
 }
