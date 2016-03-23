@@ -1,0 +1,334 @@
+--
+-- MULTI_EXPLAIN
+--
+SET citus.explain_distributed_queries TO on;
+-- Test Text format
+EXPLAIN (COSTS FALSE, FORMAT TEXT)
+	SELECT l_quantity, count(*) count_quantity FROM lineitem
+	GROUP BY l_quantity ORDER BY count_quantity, l_quantity;
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Distributed Query into pg_merge_job_0039
+   Task Count: 6
+   Tasks Shown: Sample
+   ->  Task
+         Node: host=localhost port=57637 dbname=regression
+         ->  HashAggregate
+               Group Key: l_quantity
+               ->  Seq Scan on lineitem_102010 lineitem
+ 
+ Master Query
+   ->  Sort
+         Sort Key: (sum(((sum(intermediate_column_39_1))::bigint)))::bigint, intermediate_column_39_0
+         ->  HashAggregate
+               Group Key: intermediate_column_39_0
+               ->  Seq Scan on pg_merge_job_0039
+(15 rows)
+
+-- Test JSON format
+EXPLAIN (COSTS FALSE, FORMAT JSON)
+	SELECT l_quantity, count(*) count_quantity FROM lineitem
+	GROUP BY l_quantity ORDER BY count_quantity, l_quantity;
+                                                 QUERY PLAN                                                  
+-------------------------------------------------------------------------------------------------------------
+ [                                                                                                          +
+   {                                                                                                        +
+     "Task Count": 6,                                                                                       +
+     "Tasks Shown": "Sample",                                                                               +
+     "Tasks": [                                                                                             +
+       {                                                                                                    +
+         "Node": "host=localhost port=57637 dbname=regression",                                             +
+         "Remote Plan": [                                                                                   +
+           [                                                                                                +
+             {                                                                                              +
+               "Plan": {                                                                                    +
+                 "Node Type": "Aggregate",                                                                  +
+                 "Strategy": "Hashed",                                                                      +
+                 "Group Key": ["l_quantity"],                                                               +
+                 "Plans": [                                                                                 +
+                   {                                                                                        +
+                     "Node Type": "Seq Scan",                                                               +
+                     "Parent Relationship": "Outer",                                                        +
+                     "Relation Name": "lineitem_102010",                                                    +
+                     "Alias": "lineitem"                                                                    +
+                   }                                                                                        +
+                 ]                                                                                          +
+               }                                                                                            +
+             }                                                                                              +
+           ]                                                                                                +
+                                                                                                            +
+         ]                                                                                                  +
+       }                                                                                                    +
+     ]                                                                                                      +
+   },                                                                                                       +
+   {                                                                                                        +
+     "Plan": {                                                                                              +
+       "Node Type": "Sort",                                                                                 +
+       "Sort Key": ["(sum(((sum(intermediate_column_40_1))::bigint)))::bigint", "intermediate_column_40_0"],+
+       "Plans": [                                                                                           +
+         {                                                                                                  +
+           "Node Type": "Aggregate",                                                                        +
+           "Strategy": "Hashed",                                                                            +
+           "Parent Relationship": "Outer",                                                                  +
+           "Group Key": ["intermediate_column_40_0"],                                                       +
+           "Plans": [                                                                                       +
+             {                                                                                              +
+               "Node Type": "Seq Scan",                                                                     +
+               "Parent Relationship": "Outer",                                                              +
+               "Relation Name": "pg_merge_job_0040",                                                        +
+               "Alias": "pg_merge_job_0040"                                                                 +
+             }                                                                                              +
+           ]                                                                                                +
+         }                                                                                                  +
+       ]                                                                                                    +
+     }                                                                                                      +
+   }                                                                                                        +
+ ]
+(1 row)
+
+-- Test XML format
+EXPLAIN (COSTS FALSE, FORMAT XML)
+	SELECT l_quantity, count(*) count_quantity FROM lineitem
+	GROUP BY l_quantity ORDER BY count_quantity, l_quantity;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ <explain xmlns="http://www.postgresql.org/2009/explain">                     +
+   <Job>                                                                      +
+     <Task-Count>6</Task-Count>                                               +
+     <Tasks-Shown>Sample</Tasks-Shown>                                        +
+     <Tasks>                                                                  +
+       <Task>                                                                 +
+         <Node>host=localhost port=57637 dbname=regression</Node>             +
+         <Remote-Plan>                                                        +
+           <explain xmlns="http://www.postgresql.org/2009/explain">           +
+             <Query>                                                          +
+               <Plan>                                                         +
+                 <Node-Type>Aggregate</Node-Type>                             +
+                 <Strategy>Hashed</Strategy>                                  +
+                 <Group-Key>                                                  +
+                   <Item>l_quantity</Item>                                    +
+                 </Group-Key>                                                 +
+                 <Plans>                                                      +
+                   <Plan>                                                     +
+                     <Node-Type>Seq Scan</Node-Type>                          +
+                     <Parent-Relationship>Outer</Parent-Relationship>         +
+                     <Relation-Name>lineitem_102010</Relation-Name>           +
+                     <Alias>lineitem</Alias>                                  +
+                   </Plan>                                                    +
+                 </Plans>                                                     +
+               </Plan>                                                        +
+             </Query>                                                         +
+           </explain>                                                         +
+         </Remote-Plan>                                                       +
+       </Task>                                                                +
+     </Tasks>                                                                 +
+   </Job>                                                                     +
+   <Query>                                                                    +
+     <Plan>                                                                   +
+       <Node-Type>Sort</Node-Type>                                            +
+       <Sort-Key>                                                             +
+         <Item>(sum(((sum(intermediate_column_41_1))::bigint)))::bigint</Item>+
+         <Item>intermediate_column_41_0</Item>                                +
+       </Sort-Key>                                                            +
+       <Plans>                                                                +
+         <Plan>                                                               +
+           <Node-Type>Aggregate</Node-Type>                                   +
+           <Strategy>Hashed</Strategy>                                        +
+           <Parent-Relationship>Outer</Parent-Relationship>                   +
+           <Group-Key>                                                        +
+             <Item>intermediate_column_41_0</Item>                            +
+           </Group-Key>                                                       +
+           <Plans>                                                            +
+             <Plan>                                                           +
+               <Node-Type>Seq Scan</Node-Type>                                +
+               <Parent-Relationship>Outer</Parent-Relationship>               +
+               <Relation-Name>pg_merge_job_0041</Relation-Name>               +
+               <Alias>pg_merge_job_0041</Alias>                               +
+             </Plan>                                                          +
+           </Plans>                                                           +
+         </Plan>                                                              +
+       </Plans>                                                               +
+     </Plan>                                                                  +
+   </Query>                                                                   +
+ </explain>
+(1 row)
+
+-- Test YAML format
+EXPLAIN (COSTS FALSE, FORMAT YAML)
+	SELECT l_quantity, count(*) count_quantity FROM lineitem
+	GROUP BY l_quantity ORDER BY count_quantity, l_quantity;
+                             QUERY PLAN                             
+--------------------------------------------------------------------
+ - Task Count: 6                                                   +
+   Tasks Shown: "Sample"                                           +
+   Tasks:                                                          +
+     - Node: "host=localhost port=57637 dbname=regression"         +
+       Remote Plan:                                                +
+         - Plan:                                                   +
+             Node Type: "Aggregate"                                +
+             Strategy: "Hashed"                                    +
+             Group Key:                                            +
+               - "l_quantity"                                      +
+             Plans:                                                +
+               - Node Type: "Seq Scan"                             +
+                 Parent Relationship: "Outer"                      +
+                 Relation Name: "lineitem_102010"                  +
+                 Alias: "lineitem"                                 +
+                                                                   +
+ - Plan:                                                           +
+     Node Type: "Sort"                                             +
+     Sort Key:                                                     +
+       - "(sum(((sum(intermediate_column_42_1))::bigint)))::bigint"+
+       - "intermediate_column_42_0"                                +
+     Plans:                                                        +
+       - Node Type: "Aggregate"                                    +
+         Strategy: "Hashed"                                        +
+         Parent Relationship: "Outer"                              +
+         Group Key:                                                +
+           - "intermediate_column_42_0"                            +
+         Plans:                                                    +
+           - Node Type: "Seq Scan"                                 +
+             Parent Relationship: "Outer"                          +
+             Relation Name: "pg_merge_job_0042"                    +
+             Alias: "pg_merge_job_0042"
+(1 row)
+
+-- Test verbose
+EXPLAIN (COSTS FALSE, VERBOSE TRUE)
+	SELECT sum(l_quantity) / avg(l_quantity) FROM lineitem;
+                                                                                                               QUERY PLAN                                                                                                               
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Distributed Query into pg_merge_job_0043
+   Task Count: 6
+   Tasks Shown: Sample
+   ->  Task
+         Node: host=localhost port=57637 dbname=regression
+         ->  Aggregate
+               Output: sum(l_quantity), sum(l_quantity), count(l_quantity)
+               ->  Seq Scan on public.lineitem_102010 lineitem
+                     Output: l_orderkey, l_partkey, l_suppkey, l_linenumber, l_quantity, l_extendedprice, l_discount, l_tax, l_returnflag, l_linestatus, l_shipdate, l_commitdate, l_receiptdate, l_shipinstruct, l_shipmode, l_comment
+ 
+ Master Query
+   ->  Aggregate
+         Output: (sum(intermediate_column_43_0) / (sum(intermediate_column_43_1) / sum(intermediate_column_43_2)))
+         ->  Seq Scan on pg_temp_2.pg_merge_job_0043
+               Output: intermediate_column_43_0, intermediate_column_43_1, intermediate_column_43_2
+(15 rows)
+
+-- Test join
+EXPLAIN (COSTS FALSE)
+	SELECT * FROM lineitem
+	JOIN orders ON l_orderkey = o_orderkey AND l_quantity < 5
+	ORDER BY l_quantity DESC LIMIT 10;
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Distributed Query into pg_merge_job_0044
+   Task Count: 6
+   Tasks Shown: Sample
+   ->  Task
+         Node: host=localhost port=57637 dbname=regression
+         ->  Limit
+               ->  Sort
+                     Sort Key: lineitem.l_quantity DESC
+                     ->  Hash Join
+                           Hash Cond: (lineitem.l_orderkey = orders.o_orderkey)
+                           ->  Seq Scan on lineitem_102010 lineitem
+                                 Filter: (l_quantity < '5'::numeric)
+                           ->  Hash
+                                 ->  Seq Scan on orders_102015 orders
+ 
+ Master Query
+   ->  Limit
+         ->  Sort
+               Sort Key: intermediate_column_44_4 DESC
+               ->  Seq Scan on pg_merge_job_0044
+(20 rows)
+
+-- Test all tasks output
+SET citus.explain_all_tasks TO on;
+EXPLAIN (COSTS FALSE)
+	SELECT avg(l_linenumber) FROM lineitem WHERE l_orderkey > 9030;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Distributed Query into pg_merge_job_0045
+   Task Count: 3
+   Tasks Shown: All
+   ->  Task
+         Node: host=localhost port=57637 dbname=regression
+         ->  Aggregate
+               ->  Seq Scan on lineitem_102012 lineitem
+                     Filter: (l_orderkey > 9030)
+ 
+   ->  Task
+         Node: host=localhost port=57638 dbname=regression
+         ->  Aggregate
+               ->  Seq Scan on lineitem_102013 lineitem
+                     Filter: (l_orderkey > 9030)
+ 
+   ->  Task
+         Node: host=localhost port=57637 dbname=regression
+         ->  Aggregate
+               ->  Seq Scan on lineitem_102014 lineitem
+                     Filter: (l_orderkey > 9030)
+ 
+ Master Query
+   ->  Aggregate
+         ->  Seq Scan on pg_merge_job_0045
+(24 rows)
+
+-- Test insert
+EXPLAIN (COSTS FALSE)
+	INSERT INTO lineitem VALUES(1,0);
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Distributed Query
+   Task Count: 1
+   Tasks Shown: All
+   ->  Task
+         Node: host=localhost port=57638 dbname=regression
+         ->  Insert on lineitem_102009
+               ->  Result
+ 
+(8 rows)
+
+-- Test update
+EXPLAIN (COSTS FALSE)
+	UPDATE lineitem
+	SET l_suppkey = 12
+	WHERE l_orderkey = 1 AND l_partkey = 0;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Distributed Query
+   Task Count: 1
+   Tasks Shown: All
+   ->  Task
+         Node: host=localhost port=57638 dbname=regression
+         ->  Update on lineitem_102009
+               ->  Bitmap Heap Scan on lineitem_102009
+                     Recheck Cond: (l_orderkey = 1)
+                     Filter: (l_partkey = 0)
+                     ->  Bitmap Index Scan on lineitem_pkey_102009
+                           Index Cond: (l_orderkey = 1)
+ 
+(12 rows)
+
+-- Test delete
+EXPLAIN (COSTS FALSE)
+	DELETE FROM lineitem
+	WHERE l_orderkey = 1 AND l_partkey = 0;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Distributed Query
+   Task Count: 1
+   Tasks Shown: All
+   ->  Task
+         Node: host=localhost port=57638 dbname=regression
+         ->  Delete on lineitem_102009
+               ->  Bitmap Heap Scan on lineitem_102009
+                     Recheck Cond: (l_orderkey = 1)
+                     Filter: (l_partkey = 0)
+                     ->  Bitmap Index Scan on lineitem_pkey_102009
+                           Index Cond: (l_orderkey = 1)
+ 
+(12 rows)
+

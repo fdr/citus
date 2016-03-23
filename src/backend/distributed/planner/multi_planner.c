@@ -35,7 +35,6 @@ static void CheckNodeIsDumpable(Node *node);
 /* local function forward declarations */
 static MultiPlan * CreatePhysicalPlan(Query *parse);
 static char * GetMultiPlanString(PlannedStmt *result);
-static PlannedStmt * MultiQueryContainerNode(PlannedStmt *result, MultiPlan *multiPlan);
 
 
 /* Distributed planner hook */
@@ -162,7 +161,7 @@ HasCitusToplevelNode(PlannedStmt *result)
  * function, which has to be removed from the really executed plan tree before
  * query execution.
  */
-static PlannedStmt *
+PlannedStmt *
 MultiQueryContainerNode(PlannedStmt *result, MultiPlan *multiPlan)
 {
 	FunctionScan *fauxFunctionScan = NULL;

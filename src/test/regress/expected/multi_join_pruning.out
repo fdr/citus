@@ -74,9 +74,9 @@ EXPLAIN SELECT count(*)
 	WHERE table1.array_column = table2.array_column;
 DEBUG:  join prunable for intervals [{BA1000U2AMO4ZGX,BZZXSP27F21T6},{CA1000U2AMO4ZGX,CZZXSP27F21T6}] and [{},{AZZXSP27F21T6,AZZXSP27F21T6}]
 DEBUG:  join prunable for intervals [{},{AZZXSP27F21T6,AZZXSP27F21T6}] and [{BA1000U2AMO4ZGX,BZZXSP27F21T6},{CA1000U2AMO4ZGX,CZZXSP27F21T6}]
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- explain statements for distributed queries are currently unsupported
+                         QUERY PLAN                         
+------------------------------------------------------------
+ explain statements for distributed queries are not enabled
 (1 row)
 
 EXPLAIN SELECT count(*)
@@ -84,9 +84,9 @@ EXPLAIN SELECT count(*)
 	WHERE table1.composite_column = table2.composite_column;
 DEBUG:  join prunable for intervals [(c,5,d),(d,6,e)] and [(a,3,b),(b,4,c)]
 DEBUG:  join prunable for intervals [(a,3,b),(b,4,c)] and [(c,5,d),(d,6,e)]
-                              QUERY PLAN                              
-----------------------------------------------------------------------
- explain statements for distributed queries are currently unsupported
+                         QUERY PLAN                         
+------------------------------------------------------------
+ explain statements for distributed queries are not enabled
 (1 row)
 
 -- Large table joins between varchar columns do not work because of a bug we

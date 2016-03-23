@@ -94,6 +94,7 @@ push(@pgOptions, '-c', "shared_preload_libraries=citus");
 push(@pgOptions, '-c', "citus.shard_max_size=300kB");
 push(@pgOptions, '-c', "citus.max_running_tasks_per_node=4");
 push(@pgOptions, '-c', "citus.expire_cached_shards=on");
+push(@pgOptions, '-c', "citus.explain_distributed_queries=off");
 
 # Add externally added options last, so they overwrite the default ones above
 for my $option (@userPgOptions)
