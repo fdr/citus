@@ -2290,6 +2290,8 @@ TablePartitioningSupportsDistinct(List *tableNodeList, MultiExtendedOp *opNode,
 	bool distinctSupported = true;
 	ListCell *tableNodeCell = NULL;
 
+  bool moreThanOneTable = (list_length(tableNodeList) > 1);
+
 	foreach(tableNodeCell, tableNodeList)
 	{
 		MultiTable *tableNode = (MultiTable *) lfirst(tableNodeCell);
@@ -2309,7 +2311,15 @@ TablePartitioningSupportsDistinct(List *tableNodeList, MultiExtendedOp *opNode,
 		 * if table is range partitioned.
 		 */
 		partitionMethod = PartitionMethod(relationId);
-		if (partitionMethod == DISTRIBUTE_BY_RANGE)
+
+		if (moreThanOneTable && (partitionMethod != DISTRIBUTE_BY_RANGE))
+		{
+			distinctSupported = false;
+			break;
+		}
+
+		if (partitionMethod == DISTRIBUTE_BY_RANGE
+				|| partitionMethod == DISTRIBUTE_BY_HASH)
 		{
 			Var *tablePartitionColumn = tableNode->partitionColumn;
 			bool groupedByPartitionColumn = false;
@@ -2328,6 +2338,12 @@ TablePartitioningSupportsDistinct(List *tableNodeList, MultiExtendedOp *opNode,
 			if (groupedByPartitionColumn)
 			{
 				tableDistinctSupported = true;
+			}
+
+			/* if results are grouped, they must be grouped by partition column */
+			if (list_length(opNode->groupClauseList) > 0)
+			{
+			  tableDistinctSupported = groupedByPartitionColumn;
 			}
 		}
 

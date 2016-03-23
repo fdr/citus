@@ -50,6 +50,10 @@ RESET citus.large_table_shard_count;
 SELECT count(distinct l_partkey) FROM lineitem_range;
 SELECT count(distinct (l_orderkey + 1)) FROM lineitem_range;
 
+-- We shouldn't support grouping by a non-partition column either
+
+SELECT count(distinct l_orderkey) FROM lineitem_range GROUP BY l_partkey;
+
 -- Now test append partitioned tables. First run count(distinct) on a single
 -- sharded table.
 
@@ -60,3 +64,24 @@ SELECT p_mfgr, count(distinct p_partkey) FROM part GROUP BY p_mfgr;
 -- has multiple shards
 
 SELECT count(distinct o_orderkey) FROM orders;
+
+-- Hash partitioned tables:
+
+CREATE TABLE nation_data (
+    n_nationkey integer not null,
+    n_name char(25) not null,
+    n_regionkey integer not null,
+    n_comment varchar(152)
+);
+SELECT master_create_distributed_table('nation_data', 'n_nationkey', 'hash');
+-- Multiple shards so the check which allows distincts where there is only one shard doesn't trigger
+SELECT master_create_worker_shards('nation_data', 4, 1);
+
+-- agg(distinct) on non-partition columns is not supported
+SELECT count(distinct n_regionkey) FROM nation_data;
+
+-- agg(distinct) on partition columns is supported
+SELECT count(distinct n_nationkey) FROM nation_data;
+
+-- agg(distinct) is allowed if we group by partition column
+SELECT count(distinct n_regionkey) FROM nation_data GROUP BY n_nationkey;
