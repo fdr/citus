@@ -48,22 +48,10 @@ why we ask this as well as instructions for how to proceed, see the
   sudo apt-get update
 
   apt-get install -y --no-install-recommends \
-          autotools-dev \
-          build-essential \
-          ca-certificates \
-          debhelper \
-          devscripts \
-          fakeroot \
-          flex \
-          libedit-dev \
-          libfile-fcntllock-perl \
-          libpam0g-dev \
-          libselinux1-dev \
-          libxslt-dev \
-          lintian \
-          postgresql-server-dev-9.5 \
-          postgresql-9.5
-          git
+          autotools-dev build-essential ca-certificates debhelper devscripts \
+          fakeroot flex libedit-dev libfile-fcntllock-perl libpam0g-dev \
+          libselinux1-dev libxslt-dev lintian postgresql-server-dev-9.5 \
+          postgresql-9.5 git
    ```
 
 2. Get, build and test the code
@@ -95,18 +83,9 @@ why we ask this as well as instructions for how to proceed, see the
    yum -y update
    yum groupinstall -y 'Development Tools'
    yum install -y \
-           curl \
-           flex \
-           libxml2-devel \
-           libxslt-devel \
-           openssl-devel \
-           pam-devel \
-           readline-devel \
-           rpm-build \
-           tar \
-           postgresql95-devel \
-           postgresql95-server \
-           git
+           curl flex libxml2-devel libxslt-devel openssl-devel \
+           pam-devel readline-devel rpm-build tar \
+           postgresql95-devel postgresql95-server git
 
    git clone https://github.com/citusdata/citus.git
    cd citus
