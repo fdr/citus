@@ -64,6 +64,7 @@ LoadShardIntervalList(Oid relationId)
 		shardList = lappend(shardList, newShardInterval);
 	}
 
+
 	return shardList;
 }
 

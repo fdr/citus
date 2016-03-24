@@ -13,6 +13,7 @@
 
 #include "distributed/master_metadata_utility.h"
 #include "distributed/pg_dist_partition.h"
+#include "nodes/primnodes.h"
 
 
 /*
@@ -39,6 +40,8 @@ typedef struct
 	/* pg_dist_shard metadata (variable-length ShardInterval array) for this table */
 	int shardIntervalArrayLength;
 	ShardInterval *shardIntervalArray;
+
+	ShardInterval **sortedShardIntervalArray;
 } DistTableCacheEntry;
 
 
@@ -48,6 +51,8 @@ extern DistTableCacheEntry * DistributedTableCacheEntry(Oid distributedRelationI
 extern void CitusInvalidateRelcacheByRelid(Oid relationId);
 
 extern bool CitusHasBeenLoaded(void);
+
+extern ShardInterval *FastShardPruning(Const *hashedValue, Oid relationId);
 
 /* relation oids */
 extern Oid DistPartitionRelationId(void);

@@ -129,7 +129,6 @@ static List * RangeTableFragmentsList(List *rangeTableList, List *whereClauseLis
 static OperatorCacheEntry * LookupOperatorByType(Oid typeId, Oid accessMethodId,
 												 int16 strategyNumber);
 static Oid GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumber);
-static Node * HashableClauseMutator(Node *originalNode, Var *partitionColumn);
 static bool OpExpressionContainsColumn(OpExpr *operatorExpression, Var *partitionColumn);
 static Var * MakeInt4Column(void);
 static Const * MakeInt4Constant(Datum constantValue);
@@ -2842,7 +2841,7 @@ SimpleOpExpression(Expr *clause)
  * HashableClauseMutator walks over the original where clause list, replaces
  * hashable nodes with hashed versions and keeps other nodes as they are.
  */
-static Node *
+Node *
 HashableClauseMutator(Node *originalNode, Var *partitionColumn)
 {
 	Node *newNode = NULL;

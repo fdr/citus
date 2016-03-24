@@ -513,6 +513,7 @@ DistributedModifyShardInterval(Query *query)
 
 	Oid distributedTableId = ExtractFirstDistributedTableId(query);
 	List *shardIntervalList = NIL;
+    restrictClauseList = QueryRestrictList(query);
 
 	/* error out if no shards exist for the table */
 	shardIntervalList = LoadShardIntervalList(distributedTableId);
@@ -528,9 +529,25 @@ DistributedModifyShardInterval(Query *query)
 								"and try again.")));
 	}
 
-	restrictClauseList = QueryRestrictList(query);
-	prunedShardList = PruneShardList(distributedTableId, tableId, restrictClauseList,
-									 shardIntervalList);
+
+    if (query->commandType == CMD_INSERT)
+       {
+               Var *partitionColumn = PartitionColumn(distributedTableId, tableId);
+
+               OpExpr *equalityExpr = linitial(restrictClauseList);
+               OpExpr *hashedEqExpr = (OpExpr *) HashableClauseMutator((Node *) equalityExpr,
+                                                                                                       partitionColumn);
+               Node *rightOp = get_rightop((Expr *) hashedEqExpr);
+               Const *rightConst = (Const *) rightOp;
+               Assert(IsA(rightOp, Const));
+               prunedShardList = lappend(prunedShardList, FastShardPruning(rightConst, distributedTableId));
+
+       }
+    else
+    {
+       prunedShardList = PruneShardList(distributedTableId, tableId, restrictClauseList,
+                                                                        shardIntervalList);
+    }
 
 	if (list_length(prunedShardList) != 1)
 	{

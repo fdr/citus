@@ -218,6 +218,8 @@ extern int TaskAssignmentPolicy;
 /* Function declarations for building physical plans and constructing queries */
 extern MultiPlan * MultiPhysicalPlanCreate(MultiTreeRoot *multiTree);
 extern StringInfo ShardFetchQueryString(uint64 shardId);
+extern Node * HashableClauseMutator(Node *originalNode, Var *partitionColumn);
+
 
 /* Function declarations for shard pruning */
 extern List * PruneShardList(Oid relationId, Index tableId, List *whereClauseList,

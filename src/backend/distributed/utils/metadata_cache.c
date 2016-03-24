@@ -33,6 +33,11 @@
 #include "utils/relfilenodemap.h"
 #include "utils/relmapper.h"
 #include "utils/syscache.h"
+#include "distributed/listutils.h"
+#include "access/nbtree.h"
+#include "catalog/pg_collation.h"
+#include "distributed/multi_physical_planner.h"
+#include "distributed/worker_protocol.h"
 
 
 /* Hash table for informations about each partition */
@@ -176,6 +181,7 @@ DistributedTableCacheEntry(Oid distributedRelationId)
 }
 
 
+
 /*
  * LookupDistTableCacheEntry returns the distributed table metadata for the
  * passed relationId. For efficiency it caches lookups.
@@ -191,6 +197,8 @@ LookupDistTableCacheEntry(Oid relationId)
 	List *distShardTupleList = NIL;
 	int shardIntervalArrayLength = 0;
 	ShardInterval *shardIntervalArray = NULL;
+
+	List *sortedShardIntervalList = NIL;
 	void *hashKey = (void *) &relationId;
 
 	if (DistTableCacheHash == NULL)
@@ -258,11 +266,15 @@ LookupDistTableCacheEntry(Oid relationId)
 
 			CopyShardInterval(shardInterval, &shardIntervalArray[arrayIndex]);
 
+			sortedShardIntervalList = lappend(sortedShardIntervalList, &shardIntervalArray[arrayIndex]);
+
 			MemoryContextSwitchTo(oldContext);
 
 			heap_freetuple(shardTuple);
 
 			arrayIndex++;
+
+
 		}
 
 		heap_close(distShardRelation, AccessShareLock);
@@ -281,15 +293,78 @@ LookupDistTableCacheEntry(Oid relationId)
 	}
 	else
 	{
+
 		cacheEntry->isValid = true;
 		cacheEntry->isDistributedTable = true;
 		cacheEntry->partitionKeyString = partitionKeyString;
 		cacheEntry->partitionMethod = partitionMethod;
 		cacheEntry->shardIntervalArrayLength = shardIntervalArrayLength;
 		cacheEntry->shardIntervalArray = shardIntervalArray;
+		MemoryContext oldContext = MemoryContextSwitchTo(CacheMemoryContext);
+		cacheEntry->sortedShardIntervalArray = SortedShardIntervalArray(sortedShardIntervalList);
+		MemoryContextSwitchTo(oldContext);
+
+
 	}
 
 	return cacheEntry;
+}
+
+
+
+static ShardInterval *
+ SearchCachedShardInterval(Datum partitionColumnValue, ShardInterval **shardIntervalCache,
+ 						  int shardCount, FmgrInfo *compareFunction)
+ {
+ 	int lowerBoundIndex = 0;
+ 	int upperBoundIndex = shardCount;
+
+ 	while (lowerBoundIndex < upperBoundIndex)
+ 	{
+
+ 		int middleIndex = (lowerBoundIndex + upperBoundIndex) >> 1;
+ 		int maxValueComparison = 0;
+ 		int minValueComparison = 0;
+
+ 		minValueComparison = FunctionCall2Coll(compareFunction,
+ 											   DEFAULT_COLLATION_OID,
+ 											   partitionColumnValue,
+ 											   shardIntervalCache[middleIndex]->minValue);
+
+ 		if (DatumGetInt32(minValueComparison) < 0)
+ 		{
+ 			upperBoundIndex = middleIndex;
+ 			continue;
+ 		}
+
+ 		maxValueComparison = FunctionCall2Coll(compareFunction,
+ 											   DEFAULT_COLLATION_OID,
+ 											   partitionColumnValue,
+ 											   shardIntervalCache[middleIndex]->maxValue);
+
+ 		if (DatumGetInt32(maxValueComparison) <= 0)
+ 		{
+ 			return shardIntervalCache[middleIndex];
+ 		}
+
+ 		lowerBoundIndex = middleIndex + 1;
+ 	}
+
+ 	return NULL;
+ }
+
+
+ShardInterval *
+FastShardPruning(Const *hashedValue, Oid relationId)
+{
+
+	DistTableCacheEntry *cache = DistributedTableCacheEntry(relationId);
+	ShardInterval **sortedShardIntervalArray = cache->sortedShardIntervalArray;
+	ShardInterval *shardIn = SearchCachedShardInterval(hashedValue->constvalue, sortedShardIntervalArray,
+			cache->shardIntervalArrayLength,
+			GetFunctionInfo(INT4OID, BTREE_AM_OID, BTORDER_PROC));
+
+	return shardIn;
 }
 
 
