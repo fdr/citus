@@ -530,7 +530,7 @@ DistributedModifyShardInterval(Query *query)
 	}
 
 
-    if (query->commandType == CMD_INSERT)
+    if (query->commandType == CMD_INSERT && PartitionMethod(distributedTableId) == DISTRIBUTE_BY_HASH)
        {
                Var *partitionColumn = PartitionColumn(distributedTableId, tableId);
 

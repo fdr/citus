@@ -300,10 +300,13 @@ LookupDistTableCacheEntry(Oid relationId)
 		cacheEntry->partitionMethod = partitionMethod;
 		cacheEntry->shardIntervalArrayLength = shardIntervalArrayLength;
 		cacheEntry->shardIntervalArray = shardIntervalArray;
-		MemoryContext oldContext = MemoryContextSwitchTo(CacheMemoryContext);
-		cacheEntry->sortedShardIntervalArray = SortedShardIntervalArray(sortedShardIntervalList);
-		MemoryContextSwitchTo(oldContext);
 
+		if (shardIntervalArrayLength > 0 && partitionMethod == DISTRIBUTE_BY_HASH)
+		{
+			MemoryContext oldContext = MemoryContextSwitchTo(CacheMemoryContext);
+			cacheEntry->sortedShardIntervalArray = SortedShardIntervalArray(sortedShardIntervalList);
+			MemoryContextSwitchTo(oldContext);
+		}
 
 	}
 
@@ -311,7 +314,9 @@ LookupDistTableCacheEntry(Oid relationId)
 }
 
 
-
+/*
+ * This function from COPY PR that has not been checked-in yet.
+ * */
 static ShardInterval *
  SearchCachedShardInterval(Datum partitionColumnValue, ShardInterval **shardIntervalCache,
  						  int shardCount, FmgrInfo *compareFunction)
@@ -363,6 +368,11 @@ FastShardPruning(Const *hashedValue, Oid relationId)
 	ShardInterval *shardIn = SearchCachedShardInterval(hashedValue->constvalue, sortedShardIntervalArray,
 			cache->shardIntervalArrayLength,
 			GetFunctionInfo(INT4OID, BTREE_AM_OID, BTORDER_PROC));
+
+	if (shardIn == NULL)
+		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						errmsg("distributed modifications must target exactly one "
+							   "shard")));
 
 	return shardIn;
 }
