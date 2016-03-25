@@ -534,6 +534,7 @@ DistributedModifyShardInterval(Query *query)
        {
                Var *partitionColumn = PartitionColumn(distributedTableId, tableId);
 
+
                OpExpr *equalityExpr = linitial(restrictClauseList);
                OpExpr *hashedEqExpr = (OpExpr *) HashableClauseMutator((Node *) equalityExpr,
                                                                                                        partitionColumn);

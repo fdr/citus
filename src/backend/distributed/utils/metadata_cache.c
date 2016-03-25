@@ -321,41 +321,11 @@ static ShardInterval *
  SearchCachedShardInterval(Datum partitionColumnValue, ShardInterval **shardIntervalCache,
  						  int shardCount, FmgrInfo *compareFunction)
  {
- 	int lowerBoundIndex = 0;
- 	int upperBoundIndex = shardCount;
 
- 	while (lowerBoundIndex < upperBoundIndex)
- 	{
+	uint64 hashTokenIncrement = HASH_TOKEN_COUNT / shardCount;
+	int shardIndex = (uint32) (DatumGetUInt32(partitionColumnValue) - INT32_MIN) / hashTokenIncrement;
 
- 		int middleIndex = (lowerBoundIndex + upperBoundIndex) >> 1;
- 		int maxValueComparison = 0;
- 		int minValueComparison = 0;
-
- 		minValueComparison = FunctionCall2Coll(compareFunction,
- 											   DEFAULT_COLLATION_OID,
- 											   partitionColumnValue,
- 											   shardIntervalCache[middleIndex]->minValue);
-
- 		if (DatumGetInt32(minValueComparison) < 0)
- 		{
- 			upperBoundIndex = middleIndex;
- 			continue;
- 		}
-
- 		maxValueComparison = FunctionCall2Coll(compareFunction,
- 											   DEFAULT_COLLATION_OID,
- 											   partitionColumnValue,
- 											   shardIntervalCache[middleIndex]->maxValue);
-
- 		if (DatumGetInt32(maxValueComparison) <= 0)
- 		{
- 			return shardIntervalCache[middleIndex];
- 		}
-
- 		lowerBoundIndex = middleIndex + 1;
- 	}
-
- 	return NULL;
+	return shardIntervalCache[shardIndex];
  }
 
 
