@@ -2341,9 +2341,9 @@ TablePartitioningSupportsDistinct(List *tableNodeList, MultiExtendedOp *opNode,
 			}
 
 			/* if results are grouped, they must be grouped by partition column */
-			if (list_length(opNode->groupClauseList) > 0)
+			if (!groupedByPartitionColumn && list_length(opNode->groupClauseList) > 0)
 			{
-			  tableDistinctSupported = groupedByPartitionColumn;
+			  tableDistinctSupported = false;
 			}
 		}
 
