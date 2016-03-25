@@ -362,12 +362,22 @@ static ShardInterval *
 ShardInterval *
 FastShardPruning(Const *hashedValue, Oid relationId)
 {
+	static FmgrInfo *comparisonFunction = NULL;
+
+	if(comparisonFunction == NULL)
+	{
+		MemoryContext oldContext = MemoryContextSwitchTo(CacheMemoryContext);
+		comparisonFunction = GetFunctionInfo(INT4OID, BTREE_AM_OID, BTORDER_PROC);
+		MemoryContextSwitchTo(oldContext);
+	}
 
 	DistTableCacheEntry *cache = DistributedTableCacheEntry(relationId);
 	ShardInterval **sortedShardIntervalArray = cache->sortedShardIntervalArray;
+
+
 	ShardInterval *shardIn = SearchCachedShardInterval(hashedValue->constvalue, sortedShardIntervalArray,
 			cache->shardIntervalArrayLength,
-			GetFunctionInfo(INT4OID, BTREE_AM_OID, BTORDER_PROC));
+			comparisonFunction);
 
 	if (shardIn == NULL)
 		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
