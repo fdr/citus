@@ -44,11 +44,6 @@ SELECT avg(distinct l_orderkey) FROM lineitem_range;
 -- sharded table. For this test, we also change a config setting to ensure that
 -- we don't repartition any of the tables during the query.
 SET citus.large_table_shard_count TO 2;
--- We shouldn't support grouping by a non-partition column either
-SELECT count(distinct l_orderkey) FROM lineitem_range GROUP BY l_partkey;
-ERROR:  cannot compute aggregate (distinct)
-DETAIL:  table partitioning is unsuitable for aggregate (distinct)
-HINT:  You can load the hll extension from contrib packages and enable distinct approximations.
 SELECT p_partkey, count(distinct l_orderkey) FROM lineitem_range, part
 	WHERE l_partkey = p_partkey
 	GROUP BY p_partkey
@@ -78,11 +73,6 @@ SELECT count(distinct (l_orderkey + 1)) FROM lineitem_range;
 ERROR:  cannot compute aggregate (distinct)
 DETAIL:  aggregate (distinct) on complex expressions is unsupported
 HINT:  You can load the hll extension from contrib packages and enable distinct approximations.
--- We shouldn't support grouping by a non-partition column either
-SELECT count(distinct l_orderkey) FROM lineitem_range GROUP BY l_partkey;
-ERROR:  cannot compute aggregate (distinct)
-DETAIL:  table partitioning is unsuitable for aggregate (distinct)
-HINT:  You can load the hll extension from contrib packages and enable distinct approximations.
 -- Now test append partitioned tables. First run count(distinct) on a single
 -- sharded table.
 SELECT count(distinct p_mfgr) FROM part;
@@ -108,40 +98,44 @@ ERROR:  cannot compute aggregate (distinct)
 DETAIL:  table partitioning is unsuitable for aggregate (distinct)
 HINT:  You can load the hll extension from contrib packages and enable distinct approximations.
 -- Hash partitioned tables:
-CREATE TABLE nation_data (
-    n_nationkey integer not null,
-    n_name char(25) not null,
-    n_regionkey integer not null,
-    n_comment varchar(152)
+CREATE TABLE a (
+    partkey integer not null,
+    otherkey integer not null
 );
-SELECT master_create_distributed_table('nation_data', 'n_nationkey', 'hash');
+SELECT master_create_distributed_table('a', 'partkey', 'hash');
  master_create_distributed_table 
 ---------------------------------
  
 (1 row)
 
 -- Multiple shards so the check which allows distincts where there is only one shard doesn't trigger
-SELECT master_create_worker_shards('nation_data', 4, 1);
+SELECT master_create_worker_shards('a', 4, 1);
  master_create_worker_shards 
 -----------------------------
  
 (1 row)
 
+INSERT INTO a VALUES (1, 1);
+INSERT INTO a VALUES (1, 2);
+INSERT INTO a VALUES (2, 1);
 -- agg(distinct) on non-partition columns is not supported
-SELECT count(distinct n_regionkey) FROM nation_data;
+SELECT count(distinct otherkey) FROM a;
 ERROR:  cannot compute aggregate (distinct)
 DETAIL:  table partitioning is unsuitable for aggregate (distinct)
 HINT:  You can load the hll extension from contrib packages and enable distinct approximations.
 -- agg(distinct) on partition columns is supported
-SELECT count(distinct n_nationkey) FROM nation_data;
+SELECT count(distinct partkey) FROM a;
  count 
 -------
-     0
+     2
 (1 row)
 
 -- agg(distinct) is allowed if we group by partition column
-SELECT count(distinct n_regionkey) FROM nation_data GROUP BY n_nationkey;
+SELECT count(distinct otherkey) FROM a GROUP BY partkey;
  count 
 -------
-(0 rows)
+     2
+     1
+(2 rows)
 
+DROP TABLE a;
