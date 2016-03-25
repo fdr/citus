@@ -90,6 +90,8 @@ why we ask this as well as instructions for how to proceed, see the
    git clone https://github.com/citusdata/citus.git
    cd citus
    PG_CONFIG=/usr/pgsql-9.5/bin/pg_config ./configure
+   make
+   sudo make install
    cd src/test/regress
    make check
    ```
