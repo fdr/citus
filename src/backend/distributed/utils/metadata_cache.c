@@ -215,6 +215,8 @@ FastShardPruning(Const *hashedValue, Oid relationId)
 							  argTypes);
 
 		spiStatus = SPI_keepplan(spiPlan);
+
+		SPI_exec("set enable_seqscan TO false", 0);
 		Assert(spiStatus == 0);
 
 	}
