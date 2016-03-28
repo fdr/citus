@@ -533,11 +533,23 @@ DistributedModifyShardInterval(Query *query)
 
 	if (query->commandType == CMD_INSERT)
 	{
+		Node *rightOp = NULL;
 		Var *partitionColumn = PartitionColumn(distributedTableId, tableId);
 		OpExpr *equalityExpr = linitial(restrictClauseList);
+
 		OpExpr *hashedEqExpr = (OpExpr *) HashableClauseMutator((Node *) equalityExpr,
 													partitionColumn);
-		Node *rightOp = get_rightop((Expr *) hashedEqExpr);
+
+		if (PartitionMethod(distributedTableId) == DISTRIBUTE_BY_HASH)
+		{
+			rightOp = get_rightop((Expr *) hashedEqExpr);
+		}
+		else
+		{
+			rightOp =  get_rightop((Expr *) equalityExpr);
+		}
+
+
 		Const *rightConst = (Const *) rightOp;
 		Assert(IsA(rightOp, Const));
 

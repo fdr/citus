@@ -179,7 +179,8 @@ IntegerToText(int32 value)
 	return valueText;
 }
 
-
+#include "access/htup.h"
+#include "executor/spi.h"
 /*
  *  FastShardPruning uses index lookup on pg_dist_shard on logicalrelid and shardminvalue.
  *
@@ -187,50 +188,57 @@ IntegerToText(int32 value)
 uint64
 FastShardPruning(Const *hashedValue, Oid relationId)
 {
-	SysScanDesc scanDescriptor = NULL;
-	ScanKeyData scanKey[2];
-	int scanKeyCount = 2;
-	HeapTuple heapTuple = NULL;
+	Oid argTypes[] = { OIDOID, INT4OID };
+	Datum argValues[] = {ObjectIdGetDatum(relationId), Int32GetDatum(DatumGetInt32(hashedValue->constvalue))};
+	const int argCount = 2;
+	int spiStatus PG_USED_FOR_ASSERTS_ONLY = 0;
+	static SPIPlanPtr spiPlan = NULL;
 	bool isNull = false;
 
-	Relation pgDistShard = heap_open(DistShardRelationId(), AccessShareLock);
-	TupleDesc tupleDescriptor = RelationGetDescr(pgDistShard);
 
-	int shardMinValue = ShardMinValue(DatumGetInt32(hashedValue->constvalue), relationId);
-	text *shardMinValueText = IntegerToText(shardMinValue);
+	/*
+	 * SPI_connect switches to its own memory context, which is destroyed by
+	 * the call to SPI_finish. SPI_palloc is provided to allocate memory in
+	 * the previous ("upper") context, but that is inadequate when we need to
+	 * call other functions that themselves use the normal palloc (such as
+	 * lappend). So we switch to the upper context ourselves as needed.
+	 */
+	MemoryContext upperContext = CurrentMemoryContext, oldContext = NULL;
 
+	SPI_connect();
 
-	ScanKeyInit(&scanKey[0], Anum_pg_dist_shard_logicalrelid,
-				BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relationId));
-
-
-	ScanKeyInit(&scanKey[1], Anum_pg_dist_shard_shardminvalue,
-				BTGreaterEqualStrategyNumber, F_TEXTEQ,  PointerGetDatum(shardMinValueText) );
-
-
-	scanDescriptor = systable_beginscan(pgDistShard,
-			DistShardRelIdMinValueIndexId(), true,
-										NULL, scanKeyCount, scanKey);
-
-	heapTuple = systable_getnext(scanDescriptor);
-
-	if (!HeapTupleIsValid(heapTuple))
+	if (spiPlan == NULL)
 	{
-		ereport(ERROR, (errmsg("could not find valid entry for shard ")));
+		spiPlan = SPI_prepare("SELECT * FROM pg_dist_shard WHERE "
+							  "logicalrelid = $1 AND shardminvalue::int <= $2 and "
+							  "shardmaxvalue::int >= $2", argCount,
+							  argTypes);
+
+		spiStatus = SPI_keepplan(spiPlan);
+		Assert(spiStatus == 0);
+
 	}
 
+	spiStatus = SPI_execute_plan(spiPlan, argValues, NULL, true, 0);
+	//Assert(spiStatus == SPI_OK_SELECT);
+
+	oldContext = MemoryContextSwitchTo(upperContext);
+
+	if (SPI_processed != 1 )
+	{
+		elog(ERROR, "distributed modifications must target exactly one shard");
+	}
+
+	HeapTuple heapTuple = SPI_tuptable->vals[0];
+
 	Datum shardIdDatum = heap_getattr(heapTuple, Anum_pg_dist_shard_shardid,
-									  tupleDescriptor, &isNull);
+								SPI_tuptable->tupdesc, &isNull);
 
-	int64 shardId = DatumGetInt64(shardIdDatum);
+	MemoryContextSwitchTo(oldContext);
 
-//	elog(INFO, "shardId:%ld, shardMinValue:%d", shardId, shardMinValue);
+	SPI_finish();
 
-	systable_endscan(scanDescriptor);
-
-	heap_close(pgDistShard, NoLock);
-
-	return shardId;
+	return  DatumGetInt64(shardIdDatum);
 }
 
 /*
