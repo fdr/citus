@@ -592,6 +592,18 @@ FindShardInterval(Datum partitionColumnValue, ShardInterval **shardIntervalCache
 			uint64 hashTokenIncrement = HASH_TOKEN_COUNT / shardCount;
 			int shardIndex = (uint32) (hashedValue - INT32_MIN) / hashTokenIncrement;
 
+			Assert(shardIndex <= shardCount);
+
+			/*
+			 * If the shard count is not power of 2, the range of the last
+			 * shard becomes larger than others. For that extra piece of range,
+			 * we still need to use the last shard.
+			 */
+			if (shardIndex == shardCount)
+			{
+				shardIndex = shardCount - 1;
+			}
+
 			shardInterval = shardIntervalCache[shardIndex];
 		}
 	}
