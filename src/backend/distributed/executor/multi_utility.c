@@ -387,6 +387,9 @@ ProcessCopyStmt(CopyStmt *copyStatement)
  * The function first checks if the statement belongs to a distributed table
  * or not. If it does, then it executes distributed logic for the command.
  *
+ * It also errors out if an index with this name already exists on the relation,
+ * so we don't run the statement on the workers.
+ *
  * The function returns the IndexStmt node for the command to be executed on the
  * master node table.
  */
@@ -403,8 +406,10 @@ ProcessIndexStmt(IndexStmt *createIndexStatement, const char *createIndexCommand
 		Relation relation = NULL;
 		Oid relationId = InvalidOid;
 		bool isDistributedRelation = false;
+		Oid namespaceId;
 		char *namespaceName = NULL;
 		LOCKMODE lockmode = ShareLock;
+		char *indexRelationName;
 
 		/*
 		 * We don't support concurrently creating indexes for distributed
@@ -422,10 +427,26 @@ ProcessIndexStmt(IndexStmt *createIndexStatement, const char *createIndexCommand
 		isDistributedRelation = IsDistributedTable(relationId);
 
 		/* ensure future lookups hit the same relation */
-		namespaceName = get_namespace_name(RelationGetNamespace(relation));
+		namespaceId = RelationGetNamespace(relation);
+		namespaceName = get_namespace_name(namespaceId);
 		createIndexStatement->relation->schemaname = namespaceName;
 
 		heap_close(relation, NoLock);
+
+		indexRelationName = createIndexStatement->idxname;
+		if (indexRelationName == NULL)
+		{
+			ereport(ERROR, (errcode(ERRCODE_DUPLICATE_TABLE),
+											errmsg("you must specify a name when creating an index "
+														 "on a distributed table")));
+		}
+
+		if (get_relname_relid(indexRelationName, namespaceId))
+		{
+			ereport(ERROR, (errcode(ERRCODE_DUPLICATE_TABLE),
+											errmsg("relation \"%s\" already esists",
+														 indexRelationName)));
+		}
 
 		if (isDistributedRelation)
 		{
