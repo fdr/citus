@@ -135,9 +135,7 @@ ERROR:  creating unique indexes on append-partitioned tables is currently unsupp
 -- Verify that we error out in case of postgres errors on supported statement
 -- types.
 CREATE INDEX lineitem_orderkey_index ON lineitem (l_orderkey);
-WARNING:  could not receive query results from localhost:57638
-DETAIL:  Client error: relation "lineitem_orderkey_index_102014" already exists
-ERROR:  could not execute DDL command on worker node shards
+ERROR:  relation "lineitem_orderkey_index" already esists
 CREATE INDEX try_index ON lineitem USING gist (l_orderkey);
 WARNING:  could not receive query results from localhost:57638
 DETAIL:  Client error: data type bigint has no default operator class for access method "gist"
